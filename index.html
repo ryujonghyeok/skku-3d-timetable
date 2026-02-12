@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D University Timetable</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+        
+        body { font-family: 'Noto Sans KR', sans-serif; overflow: hidden; background-color: #f3f4f6; }
+        
+        /* 3D Scene Styles */
+        .scene-container {
+            perspective: 2000px; 
+            overflow: hidden;
+        }
+        
+        .timetable-world {
+            transform-style: preserve-3d;
+            transition: transform 0.05s linear;
+            will-change: transform;
+        }
+
+        .class-block-wrapper {
+            position: absolute;
+            transform-style: preserve-3d;
+            pointer-events: auto;
+            transition: opacity 0.2s ease;
+        }
+
+        .class-content {
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            border-radius: 6px;
+            box-shadow: 2px 4px 10px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden; 
+            transition: box-shadow 0.2s ease, border-color 0.2s ease;
+            backface-visibility: hidden;
+        }
+
+        .class-block-wrapper:hover .class-content {
+            z-index: 100;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.2);
+            border-color: rgba(255,255,255,0.9);
+        }
+
+        /* 성균관대 녹색 계열 애니메이션 (Emerald) */
+        @keyframes halo-pulse {
+            0% { box-shadow: 0 0 15px rgba(5, 150, 105, 0.6), 0 0 30px rgba(5, 150, 105, 0.4) inset; border-color: rgba(255, 255, 255, 1); }
+            50% { box-shadow: 0 0 25px rgba(5, 150, 105, 0.8), 0 0 45px rgba(5, 150, 105, 0.6) inset; border-color: rgba(255, 255, 255, 1); }
+            100% { box-shadow: 0 0 15px rgba(5, 150, 105, 0.6), 0 0 30px rgba(5, 150, 105, 0.4) inset; border-color: rgba(255, 255, 255, 1); }
+        }
+
+        .selected-halo .class-content {
+            animation: halo-pulse 2s infinite ease-in-out;
+            border-width: 2px;
+        }
+        
+        .selected-halo {
+            z-index: 150 !important;
+        }
+
+        .glass-panel {
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        .slide-panel {
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .slide-panel-closed {
+            transform: translateX(100%);
+        }
+        .slide-panel-open {
+            transform: translateX(0);
+        }
+
+        .vertical-range {
+            writing-mode: bt-lr; 
+            -webkit-appearance: slider-vertical;
+            width: 8px;
+            height: 80px;
+            padding: 0 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+        // --- Icons ---
+        const IconRotate3d = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M16.466 7.5C15.643 4.237 13.952 2 12 2 9.239 2 7 6.477 7 12s2.239 10 5 10c.342 0 .677-.069 1-.2"/><path d="m15.194 13.707 3.814 1.86-1.86 3.814"/><path d="M19 15.57c-1.804.885-4.274 1.43-7 1.43-5.523 0-10-2.239-10-5s4.477-5 10-5c4.838 0 8.873 1.718 9.8 4"/></svg>;
+        const IconUpload = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>;
+        const IconPlus = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>;
+        const IconX = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
+        const IconTrash = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>;
+        const IconLayers = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>;
+        const IconUndo = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>;
+        const IconRedo = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>;
+        const IconRestore = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>;
+        const IconSearch = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
+        const IconDatabase = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>;
+        const IconPalette = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>;
+        const IconDownload = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>;
+        const IconImport = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>;
+        const IconEye = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>;
+        const IconEyeOff = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>;
+        const IconInfo = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>;
+        const IconFlag = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" className={className}><path fill="#012169" d="M0 0h640v480H0z"/><path fill="#FFF" d="m75 0 244 181L562 0h78v62L400 241l240 178v61h-80L320 301 81 480H0v-60l239-178L0 64V0h75z"/><path fill="#C8102E" d="m424 281 216 159v40L369 281h55zm-184 20 6 35L54 480H0l240-179zM640 0v3L391 191l2-44L590 0h50zM0 0l239 176h-60L0 42V0z"/><path fill="#FFF" d="M241 0v480h160V0H241zM0 160v160h640V160H0z"/><path fill="#C8102E" d="M0 193v96h640v-96H0zM273 0v480h96V0h-96z"/></svg>;
+
+
+        // 빈 카탈로그 상태로 시작. 사용자가 업로드해야 함.
+        const FULL_CATALOG_CSV = `_RowType_,_chk,GAESUL_YEAR,GAESUL_TERM,CAMPUS_GB,CAMPUS_NM,HAKWI_NAME,JUKYONGHAKWI_GB,GRADE_NAME,ISU_NAME,HAKSU_NO,BUNBAN,HAKSU_NO_BUNBAN,GWAMOK_NAME,GWAMOK_ENG_NAME,HAKJUM,PER_NAME,PER_ID,GYOSI_NAME,HYUNGTAE,BIGO,SUUP_TYPE_CD,SUUP_TYPE_NM,BOKSUJUNGONG_YN_NAME,ABEEK_YN,ISU_NAME2,ISU_NAME3,HAKBU_JIBJUNG_GB,HAKBU_JIBJUNG_GB_NM,LECTURE_PLAN_TYPE,ABK_PROGRAM,INTRO_URL,INFORM`;
+
+        const DAYS = ['월', '화', '수', '목', '금', '토']; 
+
+        // --- Categorized Color Palettes (4 Types) ---
+        const CATEGORY_PALETTES = {
+            '전공코어': ['#FCE7F3', '#FBCFE8', '#F9A8D4', '#F472B6'], // Pinks/Reds
+            '전공심화': ['#DBEAFE', '#BFDBFE', '#93C5FD', '#A5B4FC'], // Blues
+            '실험실습': ['#FEF9C3', '#FEF08A', '#FDE047', '#FCD34D'], // Yellows
+            '기타': ['#E5E7EB', '#D1D5DB', '#9CA3AF', '#F3F4F6'] // Grays
+        };
+
+        const getCategory = (type) => {
+            if (!type) return '기타';
+            if (type.includes('전공코어')) return '전공코어';
+            if (type.includes('전공심화')) return '전공심화';
+            if (type.includes('실험실습')) return '실험실습';
+            return '기타';
+        };
+
+        const getPalette = (type) => {
+            return CATEGORY_PALETTES[getCategory(type)];
+        };
+
+        const stringToCategorizedColor = (str, type) => {
+            const palette = getPalette(type);
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            return palette[Math.abs(hash) % palette.length];
+        };
+
+        const DAY_WIDTH = 180;
+        const HOUR_HEIGHT = 70;
+
+        const timeToMinutes = (timeStr) => {
+            if (!timeStr) return 0;
+            const [h, m] = timeStr.split(':').map(Number);
+            return h * 60 + m;
+        };
+
+        const minutesToTime = (mins) => {
+            const h = Math.floor(mins / 60);
+            const m = mins % 60;
+            return `${h}:${m.toString().padStart(2, '0')}`;
+        };
+
+        const parseRoomInfo = (roomCode) => {
+            if (!roomCode || roomCode === '미지정') return { name: roomCode, short: roomCode, detail: roomCode, original: roomCode };
+            let building = ""; let floor = "";
+            const p2 = roomCode.substring(0, 2);
+            if (['25', '26', '27'].includes(p2)) building = "제2공학관";
+            else if (['21', '22', '23'].includes(p2)) building = "제1공학관";
+            else if (p2 === '85') building = "산학협력관";
+            else if (p2 === '40') building = "반도체관";
+            else if (p2 === '33') building = "화학관";
+            
+            if (building) {
+                 if (roomCode.length === 5) floor = roomCode[2];
+                 else if (roomCode.length === 6) floor = parseInt(roomCode.substring(2, 4)).toString();
+                return {
+                    building: building, floor: floor, name: `${building} ${floor}층`, short: `${building} ${floor}층`,
+                    detail: `${building}(${p2}) ${floor}층 ${roomCode}`, original: roomCode
+                };
+            }
+            return { building: roomCode, floor: '', name: roomCode, short: roomCode, detail: roomCode, original: roomCode };
+        };
+
+        const splitCSVLine = (line) => {
+            const result = []; let start = 0; let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                if (line[i] === '"') inQuotes = !inQuotes;
+                else if (line[i] === ',' && !inQuotes) {
+                    let field = line.substring(start, i);
+                    if (field.startsWith('"') && field.endsWith('"')) field = field.slice(1, -1);
+                    result.push(field); start = i + 1;
+                }
+            }
+            let lastField = line.substring(start);
+            if (lastField.startsWith('"') && lastField.endsWith('"')) lastField = lastField.slice(1, -1);
+            result.push(lastField);
+            return result;
+        };
+
+        const parseLine = (line, idx) => {
+             const cols = splitCSVLine(line);
+             // Based on converted_schedule.csv headers
+             if (cols.length < 19) return null;
+
+             const campusRaw = cols[5]?.trim();
+             const campus = campusRaw === '자연과학' ? '자과캠' : (campusRaw === '인문사회' ? '인사캠' : campusRaw);
+             
+             // 이수구분을 ISU_NAME3(26번째 열) 기준으로 변경하되 없으면 ISU_NAME(9번째 열)에서 실험실습 체크 후 '기타' 처리
+             const type3 = cols[26]?.trim(); 
+             const type1 = cols[9]?.trim();
+             let type = '기타';
+             if (type3 && type3 !== '') {
+                 type = type3;
+             } else if (type1 === '실험실습') {
+                 type = '실험실습';
+             }
+             
+             const code = cols[10]?.trim();
+             const section = cols[11]?.trim(); 
+             const rawName = cols[13]?.trim();
+             const engName = cols[14]?.trim();
+             const creditStr = cols[15]?.trim() || "0";
+             const credit = parseFloat(creditStr.split('(')[0]) || 0;
+             const prof = cols[16]?.trim();
+             const timeStr = cols[18]?.trim();
+             const classType = cols[19]?.trim(); // HYUNGTAE (국제어수업 check)
+             const suupType = cols[22]?.trim(); // SUUP_TYPE_NM
+             const inform = cols[32]?.trim(); // INFORM
+
+             if (!timeStr || !rawName) return null;
+
+             const simpleSection = section ? parseInt(section, 10) : '';
+             const displayName = rawName; // Remove section info from display name
+             const uniqueIdForColor = rawName + section;
+
+             const isEnglishProf = /^[A-Za-z\s]+$/.test(prof || '');
+             // Use "국제어 강의" logic
+             const isGlobalClass = (classType && classType.includes('국제어')) || isEnglishProf || rawName.toLowerCase().includes('english');
+
+             return {
+                 idx,
+                 campus,
+                 code,
+                 section: simpleSection,
+                 rawName,
+                 engName,
+                 displayName,
+                 name: displayName,
+                 type,
+                 credit,
+                 timeStr,
+                 room: '', 
+                 professor: prof, 
+                 isGlobal: isGlobalClass, 
+                 uniqueIdForColor,
+                 suupType,
+                 inform
+             };
+        };
+
+        const extractTimeSegments = (timeStr) => {
+            if (!timeStr) return [];
+            const segments = timeStr.split(',').map(s => s.trim());
+            const results = [];
+
+            segments.forEach(seg => {
+                const match = seg.match(/([가-힣])(\d{1,2}:\d{2})-(\d{1,2}:\d{2})【(.*?)】/);
+                if (match) {
+                    const day = match[1];
+                    const startMin = timeToMinutes(match[2]);
+                    const endMin = timeToMinutes(match[3]);
+                    const room = match[4] === '미지정' ? '' : match[4];
+
+                    if (endMin > startMin && DAYS.includes(day)) {
+                        results.push({ day: day, start: startMin, end: endMin, room: room });
+                    }
+                }
+            });
+            
+            if (results.length > 1) {
+                results.sort((a, b) => {
+                    if (a.day !== b.day) return DAYS.indexOf(a.day) - DAYS.indexOf(b.day);
+                    return a.start - b.start;
+                });
+
+                const merged = [];
+                let current = results[0];
+
+                for (let i = 1; i < results.length; i++) {
+                    const next = results[i];
+                    if (current.day === next.day && current.room === next.room && (next.start - current.end <= 20)) {
+                        current.end = next.end;
+                    } else {
+                        merged.push(current);
+                        current = next;
+                    }
+                }
+                merged.push(current);
+                return merged;
+            }
+
+            return results;
+        };
+
+        const parseCSV = (csvText) => {
+            const lines = csvText.split('\n').filter(l => l.trim().length > 0);
+            const parsedEvents = [];
+            const startIdx = lines[0].startsWith('_RowType_') ? 1 : 0;
+
+            for(let i=startIdx; i<lines.length; i++) {
+                const line = lines[i];
+                const data = parseLine(line, i);
+                if (!data) continue;
+
+                const timeSegments = extractTimeSegments(data.timeStr);
+
+                timeSegments.forEach((segment, segIdx) => {
+                    const dayIndex = DAYS.indexOf(segment.day);
+                    if (dayIndex !== -1) {
+                        const roomInfo = parseRoomInfo(segment.room);
+                        parsedEvents.push({
+                            id: `evt-${i}-${segment.day}-${segIdx}-${Date.now()}`,
+                            ...data, // Spread parsed data (name, code, type, etc.)
+                            room: segment.room,
+                            roomInfo: roomInfo,
+                            dayIndex: dayIndex,
+                            start: segment.start,
+                            end: segment.end,
+                            duration: segment.end - segment.start,
+                            color: stringToCategorizedColor(data.uniqueIdForColor, data.type),
+                        });
+                    }
+                });
+            }
+            return parsedEvents;
+        };
+
+        const parseUserTimeInput = (name, timeStr, type, profInput, roomInput) => {
+            const segments = extractTimeSegments(timeStr); 
+            // Fallback for simple input "월 13:00-14:00"
+            if (segments.length === 0) {
+                 const simpleSegments = timeStr.split(/[,\/]/).map(s => s.trim());
+                 simpleSegments.forEach(seg => {
+                    const match = seg.match(/([가-힣\s]+)\s*(\d{1,2}:\d{2})\s*[-~]\s*(\d{1,2}:\d{2})/);
+                    if (match) {
+                        const daysPart = match[1].trim().split(/\s+/);
+                        const start = timeToMinutes(match[2]);
+                        const end = timeToMinutes(match[3]);
+                        if (end > start) {
+                            daysPart.forEach(d => {
+                                if (DAYS.includes(d)) segments.push({ day: d, start, end, room: '' });
+                            });
+                        }
+                    }
+                 });
+            }
+
+            if (segments.length === 0) return null;
+
+            const newEvents = [];
+            const uniqueId = name + Math.random();
+            const color = stringToCategorizedColor(uniqueId, type);
+
+            segments.forEach((seg, i) => {
+                const dayIdx = DAYS.indexOf(seg.day);
+                if (dayIdx !== -1) {
+                    const finalRoom = roomInput || seg.room;
+                    const roomInfo = parseRoomInfo(finalRoom);
+                    newEvents.push({
+                        id: `manual-${Date.now()}-${dayIdx}-${i}`,
+                        name: name,
+                        rawName: name,
+                        section: '',
+                        code: '직접입력',
+                        type: type,
+                        professor: profInput,
+                        room: finalRoom,
+                        roomInfo: roomInfo,
+                        dayIndex: dayIdx,
+                        start: seg.start,
+                        end: seg.end,
+                        duration: seg.end - seg.start,
+                        originalTime: timeStr,
+                        color: color,
+                        isGlobal: false,
+                        credit: 0,
+                        uniqueIdForColor: uniqueId,
+                        suupType: '오프라인',
+                        inform: ''
+                    });
+                }
+            });
+            return newEvents.length > 0 ? newEvents : null;
+        };
+
+        const calculateLayers = (events) => {
+            const sorted = [...events].sort((a, b) => a.start - b.start || b.duration - a.duration);
+            const layers = []; 
+
+            sorted.forEach(evt => {
+                if (evt.manualLayer !== undefined) {
+                    evt.layerIndex = evt.manualLayer;
+                    while (layers.length <= evt.manualLayer) {
+                        layers.push([]);
+                    }
+                    layers[evt.manualLayer].push(evt);
+                    return;
+                }
+
+                let placed = false;
+                for (let i = 0; i < layers.length; i++) {
+                    const layer = layers[i];
+                    const hasCollision = layer.some(existing => 
+                        existing.dayIndex === evt.dayIndex && 
+                        !(evt.end <= existing.start || evt.start >= existing.end)
+                    );
+
+                    if (!hasCollision) {
+                        evt.layerIndex = i;
+                        layer.push(evt);
+                        placed = true;
+                        break;
+                    }
+                }
+                if (!placed) {
+                    evt.layerIndex = layers.length;
+                    layers.push([evt]);
+                }
+            });
+            return sorted;
+        };
+
+        const useHistory = (initialState) => {
+            const [history, setHistory] = useState([initialState]);
+            const [index, setIndex] = useState(0);
+            const currentState = history[index];
+            const setState = (newState) => {
+                const copy = history.slice(0, index + 1);
+                copy.push(newState);
+                setHistory(copy);
+                setIndex(copy.length - 1);
+            };
+            const undo = () => index > 0 && setIndex(index - 1);
+            const redo = () => index < history.length - 1 && setIndex(index + 1);
+            return [currentState, setState, undo, redo, index > 0, index < history.length - 1];
+        };
+
+        // --- Components ---
+        
+        const BottomLeftLegend = ({ maxLayerIndex, creditInfo }) => {
+            const categories = ['전공코어', '전공심화', '실험실습', '기타'];
+            const layers = Array.from({ length: maxLayerIndex + 1 }, (_, i) => i);
+
+            return (
+                <div className="absolute bottom-4 left-4 z-20 bg-white/95 backdrop-blur p-4 rounded-xl shadow-lg border border-gray-200 pointer-events-none">
+                    <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+                        <IconInfo className="w-4 h-4 text-emerald-500" />
+                        학점 및 과목 구분
+                    </h4>
+                    <table className="w-full text-xs text-center border-collapse">
+                        <thead>
+                            <tr className="border-b-2 border-gray-200">
+                                <th className="pb-2 px-2 text-left text-gray-600 font-semibold">구분</th>
+                                {layers.map(l => (
+                                    <th key={`th-l${l}`} className="pb-2 px-2 text-gray-600 font-semibold">L{l}</th>
+                                ))}
+                                <th className="pb-2 px-2 text-emerald-600 font-bold border-l border-gray-200">총합</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {categories.map(cat => {
+                                const color = CATEGORY_PALETTES[cat][1];
+                                const catData = creditInfo.matrix[cat];
+                                return (
+                                    <tr key={cat} className="border-b border-gray-100 last:border-b-0">
+                                        <td className="py-2 px-2 text-left flex items-center gap-2">
+                                            <div className="w-3 h-3 rounded-full border border-gray-300" style={{backgroundColor: color}}></div>
+                                            <span className="text-gray-700 font-medium">{cat}</span>
+                                        </td>
+                                        {layers.map(l => (
+                                            <td key={`td-${cat}-l${l}`} className="py-2 px-2 text-gray-500">
+                                                {catData.layers[l] || '-'}
+                                            </td>
+                                        ))}
+                                        <td className="py-2 px-2 font-bold text-gray-800 border-l border-gray-200">
+                                            {catData.total || '-'}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                            {/* Grand Total Row */}
+                            <tr className="bg-gray-50 border-t-2 border-gray-200">
+                                <td className="py-2 px-2 text-left font-bold text-gray-800">총계</td>
+                                {layers.map(l => (
+                                    <td key={`total-l${l}`} className="py-2 px-2 font-bold text-emerald-600">
+                                        {creditInfo.layers[l] || '-'}
+                                    </td>
+                                ))}
+                                <td className="py-2 px-2 font-black text-emerald-700 border-l border-gray-200">
+                                    {creditInfo.total}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            );
+        };
+
+        const LayerControls = ({ layerCount, visibleLayers, layerOpacities, onToggleLayer, onOpacityChange, creditInfo }) => {
+            return (
+                <div className="absolute top-20 left-4 z-20 flex flex-col items-start gap-3">
+                    <div className="flex flex-row gap-2">
+                        {Array.from({ length: Math.max(2, layerCount) }).map((_, idx) => {
+                            const isVisible = visibleLayers[idx] !== false;
+                            const opacity = layerOpacities[idx] !== undefined ? layerOpacities[idx] : 0.95;
+                            const credits = creditInfo.layers[idx] || 0;
+                            return (
+                                <div key={idx} className="relative group flex flex-col items-center">
+                                    <button
+                                        onClick={() => onToggleLayer(idx)}
+                                        className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md border font-bold text-sm transition-all relative ${
+                                            isVisible ? 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50' : 'bg-gray-100 text-gray-400 border-gray-100'
+                                        }`}
+                                        title={`${idx}층 레이어 (${credits}학점)`}
+                                    >
+                                        {isVisible ? `L${idx}` : <IconEyeOff className="w-4 h-4" />}
+                                    </button>
+                                    <div className="absolute -top-2 -right-2 bg-emerald-500 text-white text-[9px] font-bold px-1.5 rounded-full shadow-sm z-10 pointer-events-none">{credits}</div>
+                                    <div className="absolute top-full left-1/2 -translate-x-1/2 pt-2 hidden group-hover:block z-30">
+                                        <div className="bg-white p-2 rounded-lg shadow-lg border border-gray-100 flex flex-col items-center gap-2">
+                                            <span className="text-[10px] font-bold text-gray-500">{Math.round(opacity * 100)}%</span>
+                                            <input type="range" min="0" max="1" step="0.05" value={opacity} onChange={(e) => onOpacityChange(idx, parseFloat(e.target.value))} className="vertical-range accent-emerald-600" style={{ height: '80px', width: '20px', writingMode: 'bt-lr', appearance: 'slider-vertical' }} />
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        const SidePanel = ({ isOpen, event, onClose, onDelete, onChangeLayer, layerOpacity, onLayerOpacityChange, onColorChange }) => {
+            if (!event) return null;
+            const timeRange = `${minutesToTime(event.start)} - ${minutesToTime(event.end)}`;
+            const locationText = event.roomInfo && event.roomInfo.detail ? event.roomInfo.detail : (event.room || '-');
+            const categoryName = getCategory(event.type);
+            const availableColors = getPalette(event.type);
+
+            return (
+                <div className={`fixed inset-y-0 right-0 w-96 bg-white shadow-2xl z-50 slide-panel ${isOpen ? 'slide-panel-open' : 'slide-panel-closed'} border-l border-gray-200`}>
+                    <div className="h-full flex flex-col">
+                        <div className="p-6 border-b border-gray-100 flex justify-between items-start">
+                            <div className="flex-1 min-w-0 mr-4">
+                                <span className="inline-block bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0.5 rounded font-bold mb-1">{event.campus || '캠퍼스'}</span>
+                                <span className="inline-block bg-gray-100 text-gray-600 text-[10px] px-1.5 py-0.5 rounded font-bold mb-1 ml-1">{event.type || '이수구분'}</span>
+                                <h2 className="text-xl font-bold text-gray-900 leading-tight break-keep">{event.rawName}</h2>
+                                <p className="text-xs text-gray-500 mt-0.5 font-medium">{event.engName}</p>
+                            </div>
+                            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 shrink-0"><IconX className="w-5 h-5" /></button>
+                        </div>
+
+                        <div className="flex-1 p-6 space-y-6 overflow-y-auto">
+                            <div className="space-y-4">
+                                <div className="bg-gray-50 p-4 rounded-lg border border-gray-100 space-y-3">
+                                    <div className="flex justify-between items-center"><span className="text-sm text-gray-500">학수번호-분반</span><span className="text-sm font-semibold text-gray-800">{event.code}-{event.section}</span></div>
+                                    <div className="flex justify-between items-center"><span className="text-sm text-gray-500">학점</span><span className="text-sm font-semibold text-gray-800">{event.credit || 0}학점</span></div>
+                                    <div className="flex justify-between items-center"><span className="text-sm text-gray-500">수업타입</span><span className="text-sm font-semibold text-gray-800">{event.suupType}</span></div>
+                                    <div className="h-px bg-gray-200 my-2"></div>
+                                    <div className="flex justify-between items-center"><span className="text-sm text-gray-500">교수님</span><span className="text-sm font-semibold text-gray-800">{event.professor || '-'}</span></div>
+                                    <div className="flex justify-between items-center"><span className="text-sm text-gray-500">강의실</span><span className="text-sm font-semibold text-gray-800">{locationText}</span></div>
+                                    <div className="flex justify-between items-center"><span className="text-sm text-gray-500">시간</span><span className="text-sm font-semibold text-emerald-600">{timeRange}</span></div>
+                                    
+                                    {event.isGlobal && (
+                                        <div className="flex items-center gap-2 pt-1 bg-white border border-emerald-100 p-2 rounded">
+                                            <IconFlag className="w-4 h-3 rounded-[1px] shadow-sm"/>
+                                            <span className="text-xs font-bold text-emerald-700">국제어 강의</span>
+                                        </div>
+                                    )}
+                                    {event.inform && (
+                                        <div className="mt-2 pt-2 border-t border-gray-200">
+                                            <span className="text-xs font-bold text-gray-500 block mb-1">비고 / Inform</span>
+                                            <p className="text-xs text-gray-600 leading-relaxed bg-white p-2 rounded border border-gray-100">{event.inform}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2"><IconPalette className="w-4 h-4 text-gray-500" />수업 색상 ({categoryName} 계열)</h3>
+                                <div className="flex gap-2">
+                                    {availableColors.map((color) => (
+                                        <button key={color} onClick={() => onColorChange(event.uniqueIdForColor, color)} className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 ${event.color === color ? 'border-gray-600 scale-110 shadow-sm' : 'border-gray-200'}`} style={{ backgroundColor: color }} />
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2"><IconLayers className="w-4 h-4 text-gray-500" />레이어 설정</h3>
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-500 mb-1.5">이 수업의 레이어 위치</label>
+                                        <div className="flex gap-2">
+                                            {[0, 1, 2, 3].map(idx => (
+                                                <button key={idx} onClick={() => onChangeLayer(event.id, idx)} className={`flex-1 py-1.5 text-xs font-bold rounded border transition-colors ${event.layerIndex === idx ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{idx}층</button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="pt-2">
+                                        <label className="flex justify-between text-xs font-medium text-gray-500 mb-1.5"><span>{event.layerIndex}층 투명도</span><span>{Math.round(layerOpacity * 100)}%</span></label>
+                                        <input type="range" min="0.1" max="1" step="0.05" value={layerOpacity} onChange={(e) => onLayerOpacityChange(event.layerIndex, parseFloat(e.target.value))} className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-emerald-600" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-6 border-t border-gray-100 bg-gray-50">
+                            <button onClick={() => onDelete(event.id)} className="w-full flex items-center justify-center gap-2 bg-white border border-red-200 text-red-600 hover:bg-red-50 font-bold py-2.5 rounded-lg transition-colors shadow-sm"><IconTrash className="w-4 h-4" />이 수업 삭제</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const CourseSearchModal = ({ isOpen, onClose, catalog, onAddCourse }) => {
+            const [searchTerm, setSearchTerm] = useState('');
+            const [searchType, setSearchType] = useState('name');
+            const [filtered, setFiltered] = useState([]);
+
+            useEffect(() => {
+                if (!searchTerm.trim()) { setFiltered([]); return; }
+                const lower = searchTerm.toLowerCase();
+                const res = catalog.filter(c => {
+                    if (searchType === 'name') return c.rawName.toLowerCase().includes(lower);
+                    if (searchType === 'code') return c.code.toLowerCase().includes(lower);
+                    if (searchType === 'type') return c.type.toLowerCase().includes(lower);
+                    return false;
+                }).slice(0, 50);
+                setFiltered(res);
+            }, [searchTerm, searchType, catalog]);
+
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg flex flex-col max-h-[85vh]">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2"><IconSearch className="w-5 h-5 text-gray-600" />수업 검색 및 추가</h3>
+                            <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><IconX className="w-5 h-5" /></button>
+                        </div>
+                        {catalog.length === 0 ? (
+                            <div className="flex-1 flex flex-col items-center justify-center py-12 text-center border-2 border-dashed border-gray-200 rounded-lg bg-gray-50">
+                                <IconDatabase className="w-12 h-12 text-gray-300 mb-3" />
+                                <p className="text-gray-500 font-medium mb-1">등록된 전체 강의 목록이 없습니다.</p>
+                                <p className="text-xs text-gray-400">상단의 '전체 강의 목록 업로드' 버튼을 통해 CSV 파일을 등록해주세요.</p>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="flex gap-2 mb-4">
+                                    <select value={searchType} onChange={(e) => setSearchType(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white">
+                                        <option value="name">교과목명</option>
+                                        <option value="code">학수번호</option>
+                                        <option value="type">이수구분</option>
+                                    </select>
+                                    <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="검색어 입력..." className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500" autoFocus />
+                                </div>
+                                <div className="flex-1 overflow-y-auto border border-gray-100 rounded-lg bg-gray-50">
+                                    {filtered.length === 0 ? <div className="flex items-center justify-center h-full text-gray-400 text-sm">{searchTerm ? "검색 결과가 없습니다." : "검색어를 입력하세요."}</div> : (
+                                        <div className="divide-y divide-gray-200">
+                                            {filtered.map((c) => (
+                                                <div key={c.idx} className="p-3 bg-white hover:bg-emerald-50 transition-colors flex justify-between items-center group">
+                                                    <div>
+                                                        <div className="font-bold text-sm text-gray-800">{c.displayName} <span className="text-xs font-normal text-gray-500 ml-1">({c.code}-{c.section})</span></div>
+                                                        <div className="text-xs text-gray-500 mt-0.5">{c.type} | {c.credit}학점 | {c.professor || "교수미정"} | {c.timeStr}</div>
+                                                    </div>
+                                                    <button onClick={() => {onAddCourse(c); onClose();}} className="bg-white border border-emerald-200 text-emerald-600 hover:bg-emerald-600 hover:text-white px-3 py-1.5 rounded text-xs font-bold transition-colors shadow-sm">추가</button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="mt-2 text-right text-xs text-gray-400">총 {catalog.length}개 강의 DB 로드됨</div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const TrashModal = ({ isOpen, onClose, deletedEvents, onRestore }) => { 
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md transform transition-all scale-100 flex flex-col max-h-[80vh]">
+                        <div className="flex justify-between items-center mb-5 shrink-0">
+                            <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2"><IconTrash className="w-5 h-5 text-gray-600" />휴지통 (삭제된 수업)</h3>
+                            <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><IconX className="w-5 h-5" /></button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto space-y-2 pr-2">
+                            {deletedEvents.length === 0 ? <p className="text-center text-gray-400 py-8">휴지통이 비었습니다.</p> : (
+                                deletedEvents.map(evt => (
+                                    <div key={evt.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                        <div>
+                                            <div className="font-bold text-sm text-gray-800">{evt.name}</div>
+                                            <div className="text-xs text-gray-500">{evt.professor} | {DAYS[evt.dayIndex]} {minutesToTime(evt.start)}</div>
+                                        </div>
+                                        <button onClick={() => onRestore(evt.id)} className="text-emerald-600 hover:bg-emerald-50 p-2 rounded-full transition-colors" title="복구"><IconRestore className="w-4 h-4" /></button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AddClassModal = ({ isOpen, onClose, onAdd }) => { 
+            const [name, setName] = useState('');
+            const [type, setType] = useState('기타');
+            const [prof, setProf] = useState('');
+            const [room, setRoom] = useState('');
+            const [time, setTime] = useState('');
+            const [error, setError] = useState('');
+            if (!isOpen) return null;
+            
+            const handleSubmit = (e) => {
+                e.preventDefault(); setError('');
+                const newEvents = parseUserTimeInput(name, time, type, prof, room);
+                if (newEvents) { 
+                    onAdd(newEvents); 
+                    setName(''); setType('기타'); setProf(''); setRoom(''); setTime(''); 
+                    onClose(); 
+                } else { 
+                    setError('형식이 올바르지 않습니다. (예: 월 13:00-14:00, 수 15:00-16:00)'); 
+                }
+            };
+            return (
+                <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm transform transition-all scale-100">
+                        <div className="flex justify-between items-center mb-5">
+                            <h3 className="font-bold text-lg text-gray-800">새 수업 추가</h3>
+                            <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><IconX className="w-5 h-5" /></button>
+                        </div>
+                        <form onSubmit={handleSubmit} className="space-y-3">
+                            <div><label className="block text-xs font-semibold text-gray-500 mb-1">과목명 *</label><input required type="text" value={name} onChange={e => setName(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="예: 자료구조" autoFocus /></div>
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-500 mb-1">이수구분</label>
+                                <select value={type} onChange={e => setType(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none bg-white">
+                                    <option value="기타">교양 / 기타</option>
+                                    <option value="전공코어">전공코어</option>
+                                    <option value="전공심화">전공심화</option>
+                                </select>
+                            </div>
+                            <div className="flex gap-2">
+                                <div className="flex-1"><label className="block text-xs font-semibold text-gray-500 mb-1">교수명</label><input type="text" value={prof} onChange={e => setProf(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="예: 홍길동" /></div>
+                                <div className="flex-1"><label className="block text-xs font-semibold text-gray-500 mb-1">강의실</label><input type="text" value={room} onChange={e => setRoom(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="예: 400126" /></div>
+                            </div>
+                            <div><label className="block text-xs font-semibold text-gray-500 mb-1">시간 (요일 시작-종료) *</label><input required type="text" value={time} onChange={e => setTime(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="예: 월 13:00~14:00, 수 15:00~16:00" /></div>
+                            {error && <p className="text-red-500 text-xs font-medium bg-red-50 p-2 rounded">{error}</p>}
+                            <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg transition-colors shadow-sm mt-2">추가하기</button>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [appState, setAppState, undo, redo, canUndo, canRedo] = useHistory({ events: [], deletedEvents: [] });
+            const { events, deletedEvents } = appState;
+            const [catalog, setCatalog] = useState([]);
+            const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+            const [gridRange, setGridRange] = useState({ start: 9, end: 22 });
+            const [rotation, setRotation] = useState({ x: -15, y: 25 });
+            const [zoom, setZoom] = useState(1.1);
+            const [isDragging, setIsDragging] = useState(false);
+            const [lastMouse, setLastMouse] = useState({ x: 0, y: 0 });
+            const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+            const [isTrashModalOpen, setIsTrashModalOpen] = useState(false);
+            const [selectedEventId, setSelectedEventId] = useState(null);
+            const [layerOpacities, setLayerOpacities] = useState({0: 0.95, 1: 0.95, 2: 0.95, 3: 0.95, 4: 0.95, 5: 0.95});
+            const [visibleLayers, setVisibleLayers] = useState({0: true, 1: true, 2: true, 3: true, 4: true, 5: true});
+            const containerRef = useRef(null);
+
+            const selectedEvent = useMemo(() => events.find(e => e.id === selectedEventId), [events, selectedEventId]);
+            const maxLayerIndex = useMemo(() => events.length > 0 ? Math.max(...events.map(e => e.layerIndex)) : 2, [events]);
+
+            const creditInfo = useMemo(() => {
+                const uniqueCourses = new Set();
+                const uniqueCoursesByLayer = {};
+                let total = 0;
+                const layerCredits = {};
+                const matrix = {
+                    '전공코어': { total: 0, layers: {} },
+                    '전공심화': { total: 0, layers: {} },
+                    '실험실습': { total: 0, layers: {} },
+                    '기타': { total: 0, layers: {} }
+                };
+
+                events.forEach(evt => {
+                    const uniqueId = evt.uniqueIdForColor; 
+                    const cat = getCategory(evt.type);
+
+                    if (!uniqueCourses.has(uniqueId)) { 
+                        uniqueCourses.add(uniqueId); 
+                        total += (evt.credit || 0); 
+                        matrix[cat].total += (evt.credit || 0);
+                    }
+                    if (!uniqueCoursesByLayer[evt.layerIndex]) { uniqueCoursesByLayer[evt.layerIndex] = new Set(); }
+                    if (!uniqueCoursesByLayer[evt.layerIndex].has(uniqueId)) { 
+                        uniqueCoursesByLayer[evt.layerIndex].add(uniqueId); 
+                        layerCredits[evt.layerIndex] = (layerCredits[evt.layerIndex] || 0) + (evt.credit || 0); 
+                        matrix[cat].layers[evt.layerIndex] = (matrix[cat].layers[evt.layerIndex] || 0) + (evt.credit || 0);
+                    }
+                });
+                return { total, layers: layerCredits, matrix };
+            }, [events]);
+
+            useEffect(() => {
+                const lines = FULL_CATALOG_CSV.split('\n').filter(l => l.trim().length > 0);
+                const parsedCatalog = [];
+                if (lines.length > 1) {
+                    const startIdx = lines[0].startsWith('_RowType_') ? 1 : 0;
+                    for(let i=startIdx; i<lines.length; i++) {
+                        const data = parseLine(lines[i], i);
+                        if(data) parsedCatalog.push(data);
+                    }
+                }
+                setCatalog(parsedCatalog);
+            }, []);
+
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); if (e.shiftKey) { if (canRedo) redo(); } else { if (canUndo) undo(); } }
+                    else if ((e.metaKey || e.ctrlKey) && e.key === 'y') { e.preventDefault(); if (canRedo) redo(); }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [undo, redo, canUndo, canRedo]);
+
+            const handleCatalogUpload = (e) => {
+                const file = e.target.files[0]; if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    const text = evt.target.result;
+                    const lines = text.split('\n').filter(l => l.trim().length > 0);
+                    const parsedCatalog = [];
+                    const startIdx = lines[0].startsWith('_RowType_') ? 1 : 0;
+                    for(let i=startIdx; i<lines.length; i++) { const data = parseLine(lines[i], i); if(data) parsedCatalog.push(data); }
+                    setCatalog(parsedCatalog); 
+                    alert(`${parsedCatalog.length}개의 강의가 성공적으로 로드되었습니다!`);
+                    setIsSearchModalOpen(true);
+                };
+                reader.readAsText(file);
+                e.target.value = null; // reset input
+            };
+            
+            const exportData = () => {
+                const dataStr = JSON.stringify({ events, deletedEvents, layerOpacities, visibleLayers });
+                const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+                const linkElement = document.createElement('a');
+                linkElement.setAttribute('href', dataUri); linkElement.setAttribute('download', `timetable_export_${new Date().toISOString().slice(0,10)}.json`); linkElement.click();
+            };
+            
+            const importData = (e) => {
+                const file = e.target.files[0]; if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    try {
+                        const json = JSON.parse(evt.target.result);
+                        if(json.events) { setAppState({ events: json.events, deletedEvents: json.deletedEvents || [] }); if(json.layerOpacities) setLayerOpacities(json.layerOpacities); if(json.visibleLayers) setVisibleLayers(json.visibleLayers); alert("시간표를 불러왔습니다."); }
+                    } catch (err) { alert("파일 형식이 올바르지 않습니다."); }
+                };
+                reader.readAsText(file);
+                e.target.value = null; // reset input
+            };
+            
+            const addCourseFromCatalog = (data) => {
+                const timeSegments = extractTimeSegments(data.timeStr);
+                const newEvents = [];
+                timeSegments.forEach((segment, i) => {
+                    const dayIndex = DAYS.indexOf(segment.day);
+                    if (dayIndex !== -1) {
+                        const roomInfo = parseRoomInfo(segment.room);
+                        newEvents.push({
+                            id: `db-${data.idx}-${segment.day}-${i}-${Date.now()}`,
+                            ...data, 
+                            room: segment.room, 
+                            roomInfo: roomInfo,
+                            dayIndex: dayIndex,
+                            start: segment.start,
+                            end: segment.end,
+                            duration: segment.end - segment.start,
+                            color: stringToCategorizedColor(data.uniqueIdForColor, data.type),
+                        });
+                    }
+                });
+                setAppState({ ...appState, events: calculateLayers([...events, ...newEvents]) });
+            };
+            
+            const addEvents = (newEvents) => { setAppState({ ...appState, events: calculateLayers([...events, ...newEvents]) }); };
+            
+            const removeEvent = (eventId) => {
+                const eventToRemove = events.find(e => e.id === eventId);
+                const updatedEvents = events.filter(e => e.id !== eventId);
+                setAppState({ events: calculateLayers(updatedEvents), deletedEvents: [...deletedEvents, eventToRemove] });
+                if (selectedEventId === eventId) setSelectedEventId(null);
+            };
+            
+            const restoreEvent = (eventId) => {
+                const eventToRestore = deletedEvents.find(e => e.id === eventId);
+                const updatedDeleted = deletedEvents.filter(e => e.id !== eventId);
+                setAppState({ events: calculateLayers([...events, eventToRestore]), deletedEvents: updatedDeleted });
+            };
+            
+            const changeEventLayer = (eventId, newLayerIndex) => {
+                const targetEvent = events.find(e => e.id === eventId); if (!targetEvent) return;
+                const updatedEvents = events.map(e => { if (e.uniqueIdForColor === targetEvent.uniqueIdForColor) { return { ...e, manualLayer: newLayerIndex }; } return e; });
+                setAppState({ ...appState, events: calculateLayers(updatedEvents) });
+            };
+            
+            const changeEventColor = (uniqueIdForColor, newColor) => {
+                const updatedEvents = events.map(e => { if (e.uniqueIdForColor === uniqueIdForColor) { return { ...e, color: newColor }; } return e; });
+                setAppState({ ...appState, events: updatedEvents });
+            };
+            
+            const changeLayerOpacity = (layerIndex, opacity) => { setLayerOpacities(prev => ({ ...prev, [layerIndex]: opacity })); };
+            const toggleLayerVisibility = (layerIndex) => { setVisibleLayers(prev => ({ ...prev, [layerIndex]: !prev[layerIndex] })); };
+
+            const handleMouseDown = (e) => {
+                if (e.target.closest('button') || e.target.closest('input')) return;
+                if (e.target.closest('.class-block-wrapper')) return;
+                setIsDragging(true); setLastMouse({ x: e.clientX, y: e.clientY });
+            };
+            
+            const handleMouseMove = (e) => {
+                if (!isDragging) return;
+                const deltaX = e.clientX - lastMouse.x;
+                const deltaY = e.clientY - lastMouse.y;
+                setRotation(prev => ({
+                    x: Math.max(-60, Math.min(0, prev.x - deltaY * 0.3)),
+                    y: Math.max(-45, Math.min(45, prev.y + deltaX * 0.3))
+                }));
+                setLastMouse({ x: e.clientX, y: e.clientY });
+            };
+            
+            const handleMouseUp = () => setIsDragging(false);
+            const handleCanvasClick = (e) => { if (!e.target.closest('.class-block-wrapper') && !e.target.closest('.slide-panel')) setSelectedEventId(null); };
+            const handleWheel = (e) => { if (containerRef.current && containerRef.current.contains(e.target)) { const delta = e.deltaY * -0.001; setZoom(prev => Math.min(Math.max(0.5, prev + delta), 2.5)); } };
+
+            return (
+                <div className="flex flex-col h-screen w-full bg-gray-100 text-gray-800" onMouseUp={handleMouseUp} onWheel={handleWheel} onClick={handleCanvasClick}>
+                    <AddClassModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} onAdd={addEvents} />
+                    <TrashModal isOpen={isTrashModalOpen} onClose={() => setIsTrashModalOpen(false)} deletedEvents={deletedEvents} onRestore={restoreEvent} />
+                    <CourseSearchModal isOpen={isSearchModalOpen} onClose={() => setIsSearchModalOpen(false)} catalog={catalog} onAddCourse={addCourseFromCatalog} />
+                    <SidePanel isOpen={!!selectedEvent} event={selectedEvent} onClose={() => setSelectedEventId(null)} onDelete={removeEvent} onChangeLayer={changeEventLayer} layerOpacity={selectedEvent ? (layerOpacities[selectedEvent.layerIndex] || 0.95) : 0.95} onLayerOpacityChange={changeLayerOpacity} onColorChange={changeEventColor} />
+                    
+                    <LayerControls layerCount={maxLayerIndex + 1} visibleLayers={visibleLayers} layerOpacities={layerOpacities} onToggleLayer={toggleLayerVisibility} onOpacityChange={changeLayerOpacity} creditInfo={creditInfo} />
+                    
+                    <BottomLeftLegend maxLayerIndex={maxLayerIndex} creditInfo={creditInfo} />
+
+                    <div className="bg-white shadow-sm z-20 px-4 py-2 flex justify-between items-center h-14 shrink-0 relative">
+                        <div className="flex items-center gap-2">
+                            <div className="bg-emerald-600 p-1.5 rounded-md"><IconRotate3d className="text-white w-5 h-5" /></div>
+                            <h1 className="text-lg font-bold text-gray-800 tracking-tight hidden md:block">성균관대 3D 시간표</h1>
+                            <div className="flex items-center gap-1 ml-4 border-l pl-4 border-gray-200">
+                                <button onClick={undo} disabled={!canUndo} className={`p-1.5 rounded hover:bg-gray-100 transition-colors ${!canUndo ? 'opacity-30 cursor-not-allowed' : 'text-gray-600'}`} title="실행 취소 (Ctrl+Z)"><IconUndo className="w-5 h-5" /></button>
+                                <button onClick={redo} disabled={!canRedo} className={`p-1.5 rounded hover:bg-gray-100 transition-colors ${!canRedo ? 'opacity-30 cursor-not-allowed' : 'text-gray-600'}`} title="다시 실행 (Ctrl+Y)"><IconRedo className="w-5 h-5" /></button>
+                            </div>
+                            <div className="flex items-center gap-1 ml-2 border-l pl-4 border-gray-200">
+                                <button onClick={exportData} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition-colors text-sm font-medium" title="내보내기 (JSON)">
+                                    <IconDownload className="w-4 h-4" />
+                                    저장하기
+                                </button>
+                                <label className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition-colors text-sm font-medium" title="불러오기 (JSON)">
+                                    <IconImport className="w-4 h-4" />
+                                    불러오기
+                                    <input type="file" accept=".json" className="hidden" onChange={importData} />
+                                </label>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <button onClick={(e) => { e.stopPropagation(); setIsSearchModalOpen(true); }} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-full transition-colors" title="전체 강의 목록 검색 및 추가"><IconSearch className="w-5 h-5" /></button>
+                            <button onClick={(e) => { e.stopPropagation(); setIsTrashModalOpen(true); }} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors relative" title="휴지통"><IconTrash className="w-5 h-5" />{deletedEvents.length > 0 && (<span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>)}</button>
+                            <div className="h-6 w-px bg-gray-200 mx-1"></div>
+                            
+                            <label className="cursor-pointer bg-emerald-50 hover:bg-emerald-100 text-emerald-600 px-3 py-1.5 rounded-md border border-emerald-200 transition-colors flex items-center gap-1.5">
+                                <IconUpload className="w-3.5 h-3.5" />
+                                <span className="text-xs font-bold hidden sm:inline">전체 강의 목록 업로드</span>
+                                <input type="file" accept=".csv" className="hidden" onChange={handleCatalogUpload} />
+                            </label>
+                            
+                            <button onClick={(e) => { e.stopPropagation(); setIsAddModalOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 shadow-sm transition-colors"><IconPlus className="w-3.5 h-3.5" />수업 직접 추가</button>
+                        </div>
+                    </div>
+
+                    <div ref={containerRef} className={`relative flex-1 w-full overflow-hidden bg-gradient-to-br from-gray-50 to-emerald-50 scene-container ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}>
+                        <div className="absolute top-1/2 left-1/2 w-0 h-0">
+                            <div className="timetable-world" style={{ transform: `scale(${zoom}) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)`, pointerEvents: isDragging ? 'none' : 'auto' }}>
+                                <div className="absolute bg-white/90 shadow-2xl rounded-xl border border-gray-200 backface-hidden" style={{ width: `${DAYS.length * DAY_WIDTH + 60}px`, height: `${(gridRange.end - gridRange.start) * HOUR_HEIGHT + 50}px`, transform: `translate(-50%, -50%)`, }}>
+                                    <div className="relative w-full h-full">
+                                        <div className="absolute top-0 left-[60px] right-0 h-[40px] flex border-b border-gray-200 bg-gray-50/80 rounded-t-xl">
+                                            {DAYS.map((day) => (<div key={day} className="flex-1 flex items-center justify-center font-bold text-gray-500 text-base border-r border-gray-100 last:border-0">{day}</div>))}
+                                        </div>
+                                        {Array.from({ length: gridRange.end - gridRange.start }).map((_, i) => {
+                                            const hour = gridRange.start + i;
+                                            return (
+                                                <div key={hour} className="absolute w-full border-b border-gray-100" style={{ top: `${40 + i * HOUR_HEIGHT}px`, height: `${HOUR_HEIGHT}px` }}>
+                                                    <div className="absolute left-0 w-[60px] h-full flex items-start justify-center pt-2 text-xs text-gray-400 font-mono font-medium">{hour}:00</div>
+                                                    {DAYS.map((_, di) => (<div key={di} className="absolute border-r border-dashed border-gray-100 h-full" style={{ left: `${60 + di * DAY_WIDTH}px`, width: `${DAY_WIDTH}px` }} />))}
+                                                </div>
+                                            );
+                                        })}
+                                        {Array.from({ length: DAYS.length + 1 }).map((_, i) => (
+                                            Array.from({ length: gridRange.end - gridRange.start + 1 }).map((_, j) => (
+                                                <div key={`z-line-${i}-${j}`} className="absolute bg-gray-300/30" style={{ width: '1px', height: `${(maxLayerIndex + 1) * 80}px`, left: `${60 + i * DAY_WIDTH}px`, top: `${40 + j * HOUR_HEIGHT}px`, transform: 'rotateX(-90deg)', transformOrigin: 'top', pointerEvents: 'none' }} />
+                                            ))
+                                        ))}
+                                    </div>
+                                </div>
+                                {events.filter(e => visibleLayers[e.layerIndex] !== false).map((evt) => {
+                                    const top = 40 + (evt.start - gridRange.start * 60) * (HOUR_HEIGHT / 60);
+                                    const height = evt.duration * (HOUR_HEIGHT / 60);
+                                    const left = 60 + evt.dayIndex * DAY_WIDTH - (DAYS.length * DAY_WIDTH + 60)/2;
+                                    const topOffset = -( (gridRange.end - gridRange.start) * HOUR_HEIGHT + 50 ) / 2;
+                                    return (
+                                        <div key={`shadow-${evt.id}`} className="absolute rounded-md border border-gray-300/50 bg-gray-400/10 pointer-events-none" style={{ width: `${DAY_WIDTH - 12}px`, height: `${height - 4}px`, transform: `translateX(${left + 6}px) translateY(${topOffset + top}px) translateZ(1px)`, zIndex: 0 }} />
+                                    );
+                                })}
+                                {events.filter(e => visibleLayers[e.layerIndex] !== false).map((evt) => {
+                                    const top = 40 + (evt.start - gridRange.start * 60) * (HOUR_HEIGHT / 60);
+                                    const height = evt.duration * (HOUR_HEIGHT / 60);
+                                    const left = 60 + evt.dayIndex * DAY_WIDTH - (DAYS.length * DAY_WIDTH + 60)/2;
+                                    const topOffset = -( (gridRange.end - gridRange.start) * HOUR_HEIGHT + 50 ) / 2;
+                                    const translateZ = evt.layerIndex * 80;
+                                    const currentOpacity = layerOpacities[evt.layerIndex] !== undefined ? layerOpacities[evt.layerIndex] : 0.95;
+                                    const isHighlighted = selectedEvent && evt.name === selectedEvent.name;
+                                    
+                                    const isVeryShort = evt.duration <= 50; 
+                                    const isShort = evt.duration <= 60;
+
+                                    return (
+                                        <div key={evt.id} onClick={(e) => { e.stopPropagation(); setSelectedEventId(evt.id); }} className={`class-block-wrapper cursor-pointer group ${isHighlighted ? 'selected-halo' : ''}`} style={{ width: `${DAY_WIDTH - 12}px`, height: `${height - 4}px`, transform: `translateX(${left + 6}px) translateY(${topOffset + top}px) translateZ(${translateZ}px)`, zIndex: isHighlighted ? 150 : evt.layerIndex + 1 }}>
+                                            <div className="class-content select-none" style={{ backgroundColor: evt.color, opacity: currentOpacity }}>
+                                                {isVeryShort ? (
+                                                    <div className="w-full h-full flex items-center justify-center p-1 text-center">
+                                                        <div className="font-bold text-gray-900 text-[11px] leading-tight break-keep overflow-hidden line-clamp-3">
+                                                            {evt.name || "Unknown"}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-full h-full flex flex-col p-1.5 text-left relative">
+                                                        <div className={`w-full flex-1 flex flex-col justify-start overflow-hidden`}>
+                                                            <div className={`font-bold text-gray-900 ${isShort ? 'text-xs' : 'text-sm'} leading-tight break-keep`}>{evt.name || "Unknown"}</div>
+                                                            {(!isShort || evt.duration > 40) && evt.professor && (<div className="text-[11px] text-gray-700 truncate opacity-90 mt-0.5">{evt.professor}</div>)}
+                                                        </div>
+                                                        
+                                                        <div className="w-full flex justify-between items-end mt-auto shrink-0 pt-0.5">
+                                                            <div className="text-[10px] text-gray-800 font-mono opacity-80 bg-white/30 px-1 py-0.5 rounded">{minutesToTime(evt.start)}-{minutesToTime(evt.end)}</div>
+                                                            {evt.roomInfo && evt.roomInfo.name && (
+                                                                <span className="text-[10px] text-gray-700 bg-white/40 px-1 rounded shadow-sm ml-1 shrink-0 truncate max-w-[80px]" title={evt.roomInfo.detail}>
+                                                                    {isShort ? evt.roomInfo.building : evt.roomInfo.short}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {evt.layerIndex > 0 && (<>{[0, 1, 2, 3].map(cornerIdx => { const isLeft = cornerIdx % 2 === 0; const isTop = cornerIdx < 2; return ( <div key={`vline-${cornerIdx}`} className="absolute bg-gray-400/20" style={{ width: '1px', height: `${translateZ}px`, left: isLeft ? '0' : '100%', top: isTop ? '0' : '100%', transformOrigin: 'top', transform: 'rotateX(-90deg)', pointerEvents: 'none' }} /> ); })}</>)}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
