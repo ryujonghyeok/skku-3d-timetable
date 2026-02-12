@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D University Timetable</title>
+    <title>SKKU 3D 시간표</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -52,7 +52,6 @@
             border-color: rgba(255,255,255,0.9);
         }
 
-        /* 성균관대 녹색 계열 애니메이션 (Emerald) */
         @keyframes halo-pulse {
             0% { box-shadow: 0 0 15px rgba(5, 150, 105, 0.6), 0 0 30px rgba(5, 150, 105, 0.4) inset; border-color: rgba(255, 255, 255, 1); }
             50% { box-shadow: 0 0 25px rgba(5, 150, 105, 0.8), 0 0 45px rgba(5, 150, 105, 0.6) inset; border-color: rgba(255, 255, 255, 1); }
@@ -841,21 +840,105 @@
                         setCatalog(parsedCatalog);
                     } catch (error) {
                         console.error("Failed to fetch schedule:", error);
-                        alert("강의 목록을 자동으로 불러오는데 실패했습니다. 우측 상단의 '전체 강의 목록 업로드' 버튼을 이용해 수동으로 업로드해주세요.");
+                        // Silent fail for now, user can upload manually if needed
                     }
                 };
 
                 fetchCatalog();
             }, []);
 
+            // --- KEYBOARD NAVIGATION & SHORTCUTS ---
+            const navigateSelection = (key) => {
+                const current = events.find(e => e.id === selectedEventId);
+                if (!current) return;
+
+                let nextEvent = null;
+                // Filter events on the same layer to start with, or maybe all events?
+                // The prompt says "navigate to other class block", implies visual navigation.
+                // Let's search across ALL visible events for the closest one in that direction.
+                
+                // Visible events only
+                const visibleEvents = events.filter(e => visibleLayers[e.layerIndex] !== false && e.id !== current.id);
+                
+                // Helper to get center point
+                const getCenter = (evt) => {
+                    return {
+                        x: evt.dayIndex, // 0 to 5
+                        y: evt.start + (evt.duration / 2), // minutes
+                        layer: evt.layerIndex
+                    };
+                };
+                
+                const currCenter = getCenter(current);
+
+                // Filter candidates based on direction relative to current block
+                let candidates = [];
+
+                if (key === 'ArrowUp') {
+                    // Same day, time is earlier
+                    candidates = visibleEvents.filter(e => e.dayIndex === currCenter.x && e.start < current.start);
+                    // Sort by start time descending (closest to current top)
+                    candidates.sort((a, b) => b.start - a.start);
+                } else if (key === 'ArrowDown') {
+                    // Same day, time is later
+                    candidates = visibleEvents.filter(e => e.dayIndex === currCenter.x && e.start > current.start);
+                    // Sort by start time ascending (closest to current bottom)
+                    candidates.sort((a, b) => a.start - b.start);
+                } else if (key === 'ArrowLeft') {
+                    // Previous days
+                    candidates = visibleEvents.filter(e => e.dayIndex < currCenter.x);
+                    // Sort by day descending (closest day), then by time difference
+                    candidates.sort((a, b) => {
+                        const dayDiff = b.dayIndex - a.dayIndex;
+                        if (dayDiff !== 0) return dayDiff;
+                        return Math.abs(getCenter(a).y - currCenter.y) - Math.abs(getCenter(b).y - currCenter.y);
+                    });
+                } else if (key === 'ArrowRight') {
+                    // Next days
+                    candidates = visibleEvents.filter(e => e.dayIndex > currCenter.x);
+                    // Sort by day ascending (closest day), then by time difference
+                    candidates.sort((a, b) => {
+                        const dayDiff = a.dayIndex - b.dayIndex;
+                        if (dayDiff !== 0) return dayDiff;
+                        return Math.abs(getCenter(a).y - currCenter.y) - Math.abs(getCenter(b).y - currCenter.y);
+                    });
+                }
+
+                if (candidates.length > 0) {
+                    setSelectedEventId(candidates[0].id);
+                }
+            };
+
             useEffect(() => {
                 const handleKeyDown = (e) => {
-                    if ((e.metaKey || e.ctrlKey) && e.key === 'z') { e.preventDefault(); if (e.shiftKey) { if (canRedo) redo(); } else { if (canUndo) undo(); } }
-                    else if ((e.metaKey || e.ctrlKey) && e.key === 'y') { e.preventDefault(); if (canRedo) redo(); }
+                    // Global Shortcuts (Undo/Redo)
+                    if ((e.metaKey || e.ctrlKey) && e.key === 'z') { 
+                        e.preventDefault(); 
+                        if (e.shiftKey) { if (canRedo) redo(); } else { if (canUndo) undo(); } 
+                    }
+                    else if ((e.metaKey || e.ctrlKey) && e.key === 'y') { 
+                        e.preventDefault(); 
+                        if (canRedo) redo(); 
+                    }
+
+                    // Context Shortcuts (When a block is selected)
+                    if (selectedEventId) {
+                        if (e.key === 'Backspace' || e.key === 'Delete') {
+                            e.preventDefault();
+                            removeEvent(selectedEventId);
+                        } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            setSelectedEventId(null);
+                        } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                            e.preventDefault();
+                            navigateSelection(e.key);
+                        }
+                    }
                 };
                 window.addEventListener('keydown', handleKeyDown);
                 return () => window.removeEventListener('keydown', handleKeyDown);
-            }, [undo, redo, canUndo, canRedo]);
+            }, [undo, redo, canUndo, canRedo, selectedEventId, events, visibleLayers]); // Added dependencies for navigation
+
 
             const handleFileUpload = (e) => {
                 const file = e.target.files[0]; if (!file) return;
@@ -986,17 +1069,17 @@
 
                     <div className="bg-white shadow-sm z-20 px-4 py-2 flex justify-between items-center h-14 shrink-0 relative">
                         <div className="flex items-center gap-2">
-                            <h1 className="text-lg font-bold text-gray-800 tracking-tight hidden md:block ml-2">성균관대 3D 시간표</h1>
+                            <h1 className="text-lg font-bold text-gray-800 tracking-tight hidden md:block ml-2">SKKU 3D 시간표</h1>
                             <div className="flex items-center gap-1 ml-4 border-l pl-4 border-gray-200">
                                 <button onClick={undo} disabled={!canUndo} className={`p-1.5 rounded hover:bg-gray-100 transition-colors ${!canUndo ? 'opacity-30 cursor-not-allowed' : 'text-gray-600'}`} title="실행 취소 (Ctrl+Z)"><IconUndo className="w-5 h-5" /></button>
                                 <button onClick={redo} disabled={!canRedo} className={`p-1.5 rounded hover:bg-gray-100 transition-colors ${!canRedo ? 'opacity-30 cursor-not-allowed' : 'text-gray-600'}`} title="다시 실행 (Ctrl+Y)"><IconRedo className="w-5 h-5" /></button>
                             </div>
                             <div className="flex items-center gap-1 ml-2 border-l pl-4 border-gray-200">
-                                <button onClick={exportData} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition-colors text-sm font-medium" title="내보내기 (JSON)">
+                                <button onClick={exportData} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition-colors text-sm font-medium" title="현재 시간표를 json 파일로 저장하기">
                                     <IconDownload className="w-4 h-4" />
                                     저장하기
                                 </button>
-                                <label className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition-colors text-sm font-medium" title="불러오기 (JSON)">
+                                <label className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-gray-100 text-gray-600 transition-colors text-sm font-medium" title="저장된 json 파일에서 시간표 불러오기">
                                     <IconImport className="w-4 h-4" />
                                     불러오기
                                     <input type="file" accept=".json" className="hidden" onChange={importData} />
@@ -1008,11 +1091,18 @@
                             <button onClick={(e) => { e.stopPropagation(); setIsTrashModalOpen(true); }} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors relative" title="휴지통"><IconTrash className="w-5 h-5" />{deletedEvents.length > 0 && (<span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>)}</button>
                             <div className="h-6 w-px bg-gray-200 mx-1"></div>
                             
-                            <label className="cursor-pointer bg-emerald-50 hover:bg-emerald-100 text-emerald-600 px-3 py-1.5 rounded-md border border-emerald-200 transition-colors flex items-center gap-1.5">
-                                <IconUpload className="w-3.5 h-3.5" />
-                                <span className="text-xs font-bold hidden sm:inline">전체 강의 목록 업로드</span>
-                                <input type="file" accept=".csv" className="hidden" onChange={handleCatalogUpload} />
-                            </label>
+                            <div className="relative group">
+                                <label className="cursor-pointer bg-emerald-50 hover:bg-emerald-100 text-emerald-600 px-3 py-1.5 rounded-md border border-emerald-200 transition-colors flex items-center gap-1.5">
+                                    <IconUpload className="w-3.5 h-3.5" />
+                                    <span className="text-xs font-bold hidden sm:inline">전체 강의 목록 업로드</span>
+                                    <input type="file" accept=".csv" className="hidden" onChange={handleCatalogUpload} />
+                                </label>
+                                {catalog.length > 0 && (
+                                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-1 bg-gray-700 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                                        이미 파일을 불러오긴 했습니다
+                                    </div>
+                                )}
+                            </div>
                             
                             <button onClick={(e) => { e.stopPropagation(); setIsAddModalOpen(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 shadow-sm transition-colors"><IconPlus className="w-3.5 h-3.5" />수업 직접 추가</button>
                         </div>
@@ -1059,14 +1149,14 @@
                                     const translateZ = evt.layerIndex * 80;
                                     const currentOpacity = layerOpacities[evt.layerIndex] !== undefined ? layerOpacities[evt.layerIndex] : 0.95;
                                     const isHighlighted = selectedEvent && evt.name === selectedEvent.name;
-                                    
-                                    const isVeryShort = evt.duration <= 50; 
                                     const isShort = evt.duration <= 60;
+                                    const paddingClass = 'p-1.5';
+                                    const titleSizeClass = isShort ? 'text-xs' : 'text-sm';
 
                                     return (
                                         <div key={evt.id} onClick={(e) => { e.stopPropagation(); setSelectedEventId(evt.id); }} className={`class-block-wrapper cursor-pointer group ${isHighlighted ? 'selected-halo' : ''}`} style={{ width: `${DAY_WIDTH - 12}px`, height: `${height - 4}px`, transform: `translateX(${left + 6}px) translateY(${topOffset + top}px) translateZ(${translateZ}px)`, zIndex: isHighlighted ? 150 : evt.layerIndex + 1 }}>
                                             <div className="class-content select-none" style={{ backgroundColor: evt.color, opacity: currentOpacity }}>
-                                                {isVeryShort ? (
+                                                {isShort ? (
                                                     <div className="w-full h-full flex items-center justify-center p-1 text-center">
                                                         <div className="font-bold text-gray-900 text-[11px] leading-tight break-keep overflow-hidden line-clamp-3">
                                                             {evt.name || "Unknown"}
