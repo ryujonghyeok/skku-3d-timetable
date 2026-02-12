@@ -120,17 +120,27 @@
 
         const DAYS = ['월', '화', '수', '목', '금', '토']; 
 
-        // --- Categorized Color Palettes (3 Types based on ISU_NAME3) ---
+        // --- Categorized Color Palettes (4 Types) ---
         const CATEGORY_PALETTES = {
-            '전공코어': ['#FCA5A5', '#FECACA', '#F87171', '#FCA5A5', '#FDA4AF', '#FB7185', '#F43F5E', '#F472B6', '#FBCFE8', '#F9A8D4'], // Reds & Pinks
-            '전공심화': ['#93C5FD', '#BFDBFE', '#60A5FA', '#3B82F6', '#A5B4FC', '#818CF8', '#C4B5FD', '#BAE6FD', '#7DD3FC', '#38BDF8'], // Blues
-            '기타': ['#D1D5DB', '#E5E7EB', '#9CA3AF', '#F3F4F6', '#CBD5E1', '#94A3B8', '#E2E8F0', '#F1F5F9', '#D4D4D8', '#A1A1AA'] // Grays
+            '전공코어': [
+                '#FCA5A5', '#FECACA', '#F87171', '#FCA5A5', '#FDA4AF', '#FB7185', '#F43F5E', '#F472B6', '#FBCFE8', '#F9A8D4'
+            ], // Reds & Pinks
+            '전공심화': [
+                '#93C5FD', '#BFDBFE', '#60A5FA', '#3B82F6', '#A5B4FC', '#818CF8', '#C4B5FD', '#BAE6FD', '#7DD3FC', '#38BDF8'
+            ], // Blues & Indigos
+            '실험실습': [
+                '#FDE047', '#FEF9C3', '#FCD34D', '#F59E0B', '#FEF08A', '#FDBA74', '#FB923C', '#FDE68A', '#F97316', '#FBBF24'
+            ], // Yellows & Oranges
+            '기타': [
+                '#D1D5DB', '#E5E7EB', '#9CA3AF', '#F3F4F6', '#CBD5E1', '#94A3B8', '#E2E8F0', '#F1F5F9', '#D4D4D8', '#A1A1AA'
+            ] // Grays
         };
 
         const getCategory = (type) => {
             if (!type) return '기타';
             if (type.includes('전공코어')) return '전공코어';
             if (type.includes('전공심화')) return '전공심화';
+            if (type.includes('실험실습')) return '실험실습';
             return '기타';
         };
 
@@ -214,7 +224,7 @@
              if (type3 && type3 !== '') {
                  type = type3;
              } else if (type1 === '실험실습') {
-                 type = '기타'; // 실험실습 was merged to 기타 as requested 'only 3 types'
+                 type = '실험실습';
              }
              
              const code = cols[10]?.trim();
@@ -261,7 +271,8 @@
 
         const extractTimeSegments = (timeStr) => {
             if (!timeStr) return [];
-            const segments = timeStr.split(',').map(s => s.trim());
+            // Handle both comma and slash splitters
+            const segments = timeStr.split(/[,\/]/).map(s => s.trim());
             const results = [];
 
             segments.forEach(seg => {
@@ -448,7 +459,7 @@
         // --- Components ---
         
         const BottomLeftLegend = ({ maxLayerIndex, creditInfo }) => {
-            const categories = ['전공코어', '전공심화', '기타'];
+            const categories = ['전공코어', '전공심화', '실험실습', '기타'];
             const layers = Array.from({ length: maxLayerIndex + 1 }, (_, i) => i);
 
             return (
@@ -843,57 +854,21 @@
             const navigateSelection = (key) => {
                 const current = events.find(e => e.id === selectedEventId);
                 if (!current) return;
-
-                // Visible events only
+                
                 const visibleEvents = events.filter(e => visibleLayers[e.layerIndex] !== false && e.id !== current.id);
-                
-                // Helper to get center point
-                const getCenter = (evt) => {
-                    return {
-                        x: evt.dayIndex, // 0 to 5
-                        y: evt.start + (evt.duration / 2), // minutes
-                        layer: evt.layerIndex
-                    };
-                };
-                
-                const currCenter = getCenter(current);
-
-                // Filter candidates based on direction relative to current block
+                // Simple heuristic for navigation
                 let candidates = [];
-
                 if (key === 'ArrowUp') {
-                    // Same day, time is earlier
-                    candidates = visibleEvents.filter(e => e.dayIndex === currCenter.x && e.start < current.start);
-                    // Sort by start time descending (closest to current top)
-                    candidates.sort((a, b) => b.start - a.start);
+                    candidates = visibleEvents.filter(e => e.dayIndex === current.dayIndex && e.start < current.start).sort((a,b) => b.start - a.start);
                 } else if (key === 'ArrowDown') {
-                    // Same day, time is later
-                    candidates = visibleEvents.filter(e => e.dayIndex === currCenter.x && e.start > current.start);
-                    // Sort by start time ascending (closest to current bottom)
-                    candidates.sort((a, b) => a.start - b.start);
+                    candidates = visibleEvents.filter(e => e.dayIndex === current.dayIndex && e.start > current.start).sort((a,b) => a.start - b.start);
                 } else if (key === 'ArrowLeft') {
-                    // Previous days
-                    candidates = visibleEvents.filter(e => e.dayIndex < currCenter.x);
-                    // Sort by day descending (closest day), then by time difference
-                    candidates.sort((a, b) => {
-                        const dayDiff = b.dayIndex - a.dayIndex;
-                        if (dayDiff !== 0) return dayDiff;
-                        return Math.abs(getCenter(a).y - currCenter.y) - Math.abs(getCenter(b).y - currCenter.y);
-                    });
+                    candidates = visibleEvents.filter(e => e.dayIndex < current.dayIndex).sort((a,b) => b.dayIndex - a.dayIndex || Math.abs(a.start - current.start) - Math.abs(b.start - current.start));
                 } else if (key === 'ArrowRight') {
-                    // Next days
-                    candidates = visibleEvents.filter(e => e.dayIndex > currCenter.x);
-                    // Sort by day ascending (closest day), then by time difference
-                    candidates.sort((a, b) => {
-                        const dayDiff = a.dayIndex - b.dayIndex;
-                        if (dayDiff !== 0) return dayDiff;
-                        return Math.abs(getCenter(a).y - currCenter.y) - Math.abs(getCenter(b).y - currCenter.y);
-                    });
+                    candidates = visibleEvents.filter(e => e.dayIndex > current.dayIndex).sort((a,b) => a.dayIndex - b.dayIndex || Math.abs(a.start - current.start) - Math.abs(b.start - current.start));
                 }
-
-                if (candidates.length > 0) {
-                    setSelectedEventId(candidates[0].id);
-                }
+                
+                if(candidates.length > 0) setSelectedEventId(candidates[0].id);
             };
 
             useEffect(() => {
