@@ -99,7 +99,7 @@
 
         // --- Icons ---
         const IconRotate3d = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M16.466 7.5C15.643 4.237 13.952 2 12 2 9.239 2 7 6.477 7 12s2.239 10 5 10c.342 0 .677-.069 1-.2"/><path d="m15.194 13.707 3.814 1.86-1.86 3.814"/><path d="M19 15.57c-1.804.885-4.274 1.43-7 1.43-5.523 0-10-2.239-10-5s4.477-5 10-5c4.838 0 8.873 1.718 9.8 4"/></svg>;
-        const IconUpload = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>;
+        const IconUpload = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>;
         const IconPlus = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>;
         const IconX = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
         const IconTrash = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>;
@@ -976,10 +976,22 @@
             const addEvents = (newEvents) => { setAppState({ ...appState, events: calculateLayers([...events, ...newEvents]) }); };
             
             const removeEvent = (eventId) => {
-                const eventToRemove = events.find(e => e.id === eventId);
-                const updatedEvents = events.filter(e => e.id !== eventId);
-                setAppState({ events: calculateLayers(updatedEvents), deletedEvents: [...deletedEvents, eventToRemove] });
-                if (selectedEventId === eventId) setSelectedEventId(null);
+                // Find the target event to get its group ID
+                const targetEvent = events.find(e => e.id === eventId);
+                if (!targetEvent) return;
+
+                // Remove ALL events that match the unique grouping ID (Name + Section)
+                const eventsToRemove = events.filter(e => e.uniqueIdForColor === targetEvent.uniqueIdForColor);
+                const remainingEvents = events.filter(e => e.uniqueIdForColor !== targetEvent.uniqueIdForColor);
+                
+                setAppState({ 
+                    events: calculateLayers(remainingEvents), 
+                    deletedEvents: [...deletedEvents, ...eventsToRemove] 
+                });
+                
+                if (selectedEventId && eventsToRemove.some(e => e.id === selectedEventId)) {
+                     setSelectedEventId(null);
+                }
             };
             
             const restoreEvent = (eventId) => {
@@ -1148,7 +1160,7 @@
                                     const topOffset = -( (gridRange.end - gridRange.start) * HOUR_HEIGHT + 50 ) / 2;
                                     const translateZ = evt.layerIndex * 80;
                                     const currentOpacity = layerOpacities[evt.layerIndex] !== undefined ? layerOpacities[evt.layerIndex] : 0.95;
-                                    const isHighlighted = selectedEvent && evt.name === selectedEvent.name;
+                                    const isHighlighted = selectedEvent && evt.uniqueIdForColor === selectedEvent.uniqueIdForColor;
                                     
                                     // Unified design for all blocks
                                     const paddingClass = 'p-1.5';
