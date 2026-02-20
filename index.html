@@ -487,55 +487,60 @@
             const layers = Array.from({ length: maxLayerIndex + 1 }, (_, i) => i);
 
             return (
-                <div className="absolute bottom-4 left-4 z-20 bg-white/95 backdrop-blur p-4 rounded-xl shadow-lg border border-gray-200 pointer-events-none">
-                    <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
-                        <IconInfo className="w-4 h-4 text-emerald-500" />
-                        학점 및 과목 구분
-                    </h4>
-                    <table className="w-full text-xs text-center border-collapse">
-                        <thead>
-                            <tr className="border-b-2 border-gray-200">
-                                <th className="pb-2 px-2 text-left text-gray-600 font-semibold">구분</th>
-                                {layers.map(l => (
-                                    <th key={`th-l${l}`} className="pb-2 px-2 text-gray-600 font-semibold">L{l}</th>
-                                ))}
-                                <th className="pb-2 px-2 text-emerald-600 font-bold border-l border-gray-200">총합</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {categories.map(cat => {
-                                const color = CATEGORY_PALETTES[cat][0];
-                                const catData = creditInfo.matrix[cat];
-                                return (
-                                    <tr key={cat} className="border-b border-gray-100 last:border-b-0">
-                                        <td className="py-2 px-2 text-left flex items-center gap-2">
-                                            <div className="w-3 h-3 rounded-full border border-gray-300" style={{backgroundColor: color}}></div>
-                                            <span className="text-gray-700 font-medium">{cat}</span>
-                                        </td>
-                                        {layers.map(l => (
-                                            <td key={`td-${cat}-l${l}`} className="py-2 px-2 text-gray-500">
-                                                {catData.layers[l] || '-'}
+                <div className="absolute bottom-4 left-4 z-20 bg-white/95 backdrop-blur p-4 rounded-xl shadow-lg border border-gray-200 pointer-events-none flex flex-col gap-3">
+                    <div>
+                        <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+                            <IconInfo className="w-4 h-4 text-emerald-500" />
+                            학점 및 과목 구분
+                        </h4>
+                        <table className="w-full text-xs text-center border-collapse">
+                            <thead>
+                                <tr className="border-b-2 border-gray-200">
+                                    <th className="pb-2 px-2 text-left text-gray-600 font-semibold">구분</th>
+                                    {layers.map(l => (
+                                        <th key={`th-l${l}`} className="pb-2 px-2 text-gray-600 font-semibold">L{l}</th>
+                                    ))}
+                                    <th className="pb-2 px-2 text-emerald-600 font-bold border-l border-gray-200">총합</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {categories.map(cat => {
+                                    const color = CATEGORY_PALETTES[cat][0];
+                                    const catData = creditInfo.matrix[cat];
+                                    return (
+                                        <tr key={cat} className="border-b border-gray-100 last:border-b-0">
+                                            <td className="py-2 px-2 text-left flex items-center gap-2">
+                                                <div className="w-3 h-3 rounded-full border border-gray-300" style={{backgroundColor: color}}></div>
+                                                <span className="text-gray-700 font-medium">{cat}</span>
                                             </td>
-                                        ))}
-                                        <td className="py-2 px-2 font-bold text-gray-800 border-l border-gray-200">
-                                            {catData.total || '-'}
+                                            {layers.map(l => (
+                                                <td key={`td-${cat}-l${l}`} className="py-2 px-2 text-gray-500">
+                                                    {catData.layers[l] || '-'}
+                                                </td>
+                                            ))}
+                                            <td className="py-2 px-2 font-bold text-gray-800 border-l border-gray-200">
+                                                {catData.total || '-'}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                <tr className="bg-gray-50 border-t-2 border-gray-200">
+                                    <td className="py-2 px-2 text-left font-bold text-gray-800">총계</td>
+                                    {layers.map(l => (
+                                        <td key={`total-l${l}`} className="py-2 px-2 font-bold text-emerald-600">
+                                            {creditInfo.layers[l] || '-'}
                                         </td>
-                                    </tr>
-                                );
-                            })}
-                            <tr className="bg-gray-50 border-t-2 border-gray-200">
-                                <td className="py-2 px-2 text-left font-bold text-gray-800">총계</td>
-                                {layers.map(l => (
-                                    <td key={`total-l${l}`} className="py-2 px-2 font-bold text-emerald-600">
-                                        {creditInfo.layers[l] || '-'}
+                                    ))}
+                                    <td className="py-2 px-2 font-black text-emerald-700 border-l border-gray-200">
+                                        {creditInfo.total}
                                     </td>
-                                ))}
-                                <td className="py-2 px-2 font-black text-emerald-700 border-l border-gray-200">
-                                    {creditInfo.total}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div className="text-[10px] text-gray-500 border-t border-gray-100 pt-2">
+                        <span className="font-bold text-gray-600">Tip:</span> Alt(Option) + 드래그로 시점 회전
+                    </div>
                 </div>
             );
         };
@@ -826,6 +831,7 @@
             const [layerOpacities, setLayerOpacities] = useState({0: 0.95, 1: 0.95, 2: 0.95, 3: 0.95, 4: 0.95, 5: 0.95});
             const [visibleLayers, setVisibleLayers] = useState({0: true, 1: true, 2: true, 3: true, 4: true, 5: true});
             const containerRef = useRef(null);
+            const [isAltPressed, setIsAltPressed] = useState(false);
 
             // Expose addAllCourses to window for manual testing/loading
             useEffect(() => {
@@ -953,6 +959,8 @@
 
             useEffect(() => {
                 const handleKeyDown = (e) => {
+                    if (e.key === 'Alt') setIsAltPressed(true);
+
                     // Prevent app shortcuts when typing in inputs/textareas
                     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
@@ -980,8 +988,24 @@
                         }
                     }
                 };
+
+                const handleKeyUp = (e) => {
+                    if (e.key === 'Alt') setIsAltPressed(false);
+                };
+
+                const handleBlur = () => {
+                    setIsAltPressed(false);
+                };
+
                 window.addEventListener('keydown', handleKeyDown);
-                return () => window.removeEventListener('keydown', handleKeyDown);
+                window.addEventListener('keyup', handleKeyUp);
+                window.addEventListener('blur', handleBlur);
+
+                return () => {
+                    window.removeEventListener('keydown', handleKeyDown);
+                    window.removeEventListener('keyup', handleKeyUp);
+                    window.removeEventListener('blur', handleBlur);
+                };
             }, [undo, redo, canUndo, canRedo, selectedEventId, events, visibleLayers]); // Added dependencies for navigation
 
 
@@ -1104,38 +1128,43 @@
             const toggleLayerVisibility = (layerIndex) => { setVisibleLayers(prev => ({ ...prev, [layerIndex]: !prev[layerIndex] })); };
 
             const handleMouseDown = (e) => {
-                if (e.target.closest('button') || e.target.closest('input')) return;
-                if (e.target.closest('.class-block-wrapper')) return;
+                if (e.target.closest('button') || e.target.closest('input') || e.target.closest('textarea')) return;
+                
+                // Allow drag starting from a block ONLY if Alt is pressed
+                if (e.target.closest('.class-block-wrapper') && !e.altKey) return;
+                
                 setIsDragging(false); // Reset drag state
                 setDragStart({ x: e.clientX, y: e.clientY });
                 setLastMouse({ x: e.clientX, y: e.clientY });
             };
             
             const handleMouseMove = (e) => {
-                // Determine if dragging
-                if (e.buttons === 1) { // Left mouse button held
-                    const moveX = Math.abs(e.clientX - dragStart.x);
-                    const moveY = Math.abs(e.clientY - dragStart.y);
+                if (e.buttons !== 1) return; // Only process if left button is held
+
+                const moveX = Math.abs(e.clientX - dragStart.x);
+                const moveY = Math.abs(e.clientY - dragStart.y);
+                
+                // Only evaluate dragging and allow rotation if Alt/Option is pressed
+                if (e.altKey) {
                     if (moveX > 5 || moveY > 5) {
                         setIsDragging(true);
                     }
+
+                    if (isDragging || moveX > 5 || moveY > 5) {
+                        const deltaX = e.clientX - lastMouse.x;
+                        const deltaY = e.clientY - lastMouse.y;
+                        setRotation(prev => ({
+                            x: Math.max(-60, Math.min(0, prev.x - deltaY * 0.3)),
+                            y: Math.max(-45, Math.min(45, prev.y + deltaX * 0.3))
+                        }));
+                    }
                 }
-
-                if (!isDragging && e.buttons !== 1) return; // Only rotate if dragging
-                if (e.buttons !== 1) return; // Safety check
-
-                const deltaX = e.clientX - lastMouse.x;
-                const deltaY = e.clientY - lastMouse.y;
-                setRotation(prev => ({
-                    x: Math.max(-60, Math.min(0, prev.x - deltaY * 0.3)),
-                    y: Math.max(-45, Math.min(45, prev.y + deltaX * 0.3))
-                }));
+                
+                // Keep tracking last mouse to prevent jumping when Alt is suddenly pressed during a move
                 setLastMouse({ x: e.clientX, y: e.clientY });
             };
             
             const handleMouseUp = () => {
-                // End of interaction
-                // isDragging state is used by click handlers to prevent click
                 setTimeout(() => setIsDragging(false), 0);
             };
 
@@ -1148,7 +1177,7 @@
             const handleWheel = (e) => { if (containerRef.current && containerRef.current.contains(e.target)) { const delta = e.deltaY * -0.001; setZoom(prev => Math.min(Math.max(0.5, prev + delta), 2.5)); } };
             
             // Helper function to format memo for block display
-            // Use actual user input format (newlines) but restrict to 4 lines, max 4 chars each
+            // Max 9 chars, split into 3 chars per line, max 3 lines
             const formatBlockMemo = (text) => {
                 if (!text) return null;
                 // split by newline, take max 4 lines
@@ -1231,9 +1260,9 @@
                         </div>
                     </div>
 
-                    <div ref={containerRef} className={`relative flex-1 w-full overflow-hidden bg-gradient-to-br from-gray-50 to-emerald-50 scene-container ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}>
+                    <div ref={containerRef} className={`relative flex-1 w-full overflow-hidden bg-gradient-to-br from-gray-50 to-emerald-50 scene-container ${isDragging ? 'cursor-grabbing' : (isAltPressed ? 'cursor-grab' : 'cursor-default')}`} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}>
                         <div className="absolute top-1/2 left-1/2 w-0 h-0">
-                            <div className="timetable-world" style={{ transform: `scale(${zoom}) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)`, pointerEvents: isDragging ? 'none' : 'auto' }}>
+                            <div className="timetable-world" style={{ transform: `scale(${zoom}) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)` }}>
                                 <div className="absolute bg-white/90 shadow-2xl rounded-xl border border-gray-200 backface-hidden" style={{ width: `${DAYS.length * DAY_WIDTH + 60}px`, height: `${(gridRange.end - gridRange.start) * HOUR_HEIGHT + 50}px`, transform: `translate(-50%, -50%)`, }}>
                                     <div className="relative w-full h-full">
                                         <div className="absolute top-0 left-[60px] right-0 h-[40px] flex border-b border-gray-200 bg-gray-50/80 rounded-t-xl">
@@ -1281,7 +1310,7 @@
                                     const memoLines = formatBlockMemo(evt.memo);
 
                                     return (
-                                        <div key={evt.id} onClick={(e) => { e.stopPropagation(); if(!isDragging) setSelectedEventId(evt.id); }} className={`class-block-wrapper cursor-pointer group ${isHighlighted ? 'selected-halo' : ''}`} style={{ width: `${DAY_WIDTH - 12}px`, height: `${height - 4}px`, transform: `translateX(${left + 6}px) translateY(${topOffset + top}px) translateZ(${translateZ}px)`, zIndex: isHighlighted ? 150 : evt.layerIndex + 1 }}>
+                                        <div key={evt.id} onClick={(e) => { e.stopPropagation(); if (!isDragging && !e.altKey) setSelectedEventId(evt.id); }} className={`class-block-wrapper cursor-pointer group ${isHighlighted ? 'selected-halo' : ''}`} style={{ width: `${DAY_WIDTH - 12}px`, height: `${height - 4}px`, transform: `translateX(${left + 6}px) translateY(${topOffset + top}px) translateZ(${translateZ}px)`, zIndex: isHighlighted ? 150 : evt.layerIndex + 1 }}>
                                             <div className="class-content select-none" style={{ backgroundColor: evt.color, opacity: currentOpacity }}>
                                                 
                                                 {/* Memo Badge */}
@@ -1325,4 +1354,4 @@
         root.render(<App />);
     </script>
 </body>
-</html>
+</html>     
