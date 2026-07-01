@@ -195,23 +195,7 @@
 
         const parseRoomInfo = (roomCode) => {
             if (!roomCode || roomCode === '미지정') return { name: roomCode, short: roomCode, detail: roomCode, original: roomCode };
-            let building = ""; let floor = "";
-            const p2 = roomCode.substring(0, 2);
-            if (['25', '26', '27'].includes(p2)) building = "제2공학관";
-            else if (['21', '22', '23'].includes(p2)) building = "제1공학관";
-            else if (p2 === '85') building = "산학협력관";
-            else if (p2 === '40') building = "반도체관";
-            else if (p2 === '33') building = "화학관";
-            
-            if (building) {
-                 if (roomCode.length === 5) floor = roomCode[2];
-                 else if (roomCode.length === 6) floor = parseInt(roomCode.substring(2, 4)).toString();
-                return {
-                    building: building, floor: floor, name: `${building} ${floor}층`, short: `${building} ${floor}층`,
-                    detail: `${building}(${p2}) ${floor}층 ${roomCode}`, original: roomCode
-                };
-            }
-            return { building: roomCode, floor: '', name: roomCode, short: roomCode, detail: roomCode, original: roomCode };
+            return { building: '', floor: '', name: roomCode, short: roomCode, detail: roomCode, original: roomCode };
         };
 
         const splitCSVLine = (line) => {
@@ -585,7 +569,7 @@
         const SidePanel = ({ isOpen, event, onClose, onDelete, onChangeLayer, layerOpacity, onLayerOpacityChange, onColorChange, onMemoChange }) => {
             if (!event) return null;
             const timeRange = `${minutesToTime(event.start)} - ${minutesToTime(event.end)}`;
-            const locationText = event.roomInfo && event.roomInfo.detail ? event.roomInfo.detail : (event.room || '-');
+            const locationText = event.room || event.roomInfo?.original || '-';
             const categoryName = getCategory(event.type);
             const availableColors = getPalette(event.type);
 
@@ -1315,6 +1299,7 @@
                                     const isShort = evt.duration <= 60; // Flag for hiding elements
                                     
                                     const memoLines = formatBlockMemo(evt.memo);
+                                    const roomLabel = evt.room || evt.roomInfo?.original;
 
                                     return (
                                         <div key={evt.id} onClick={(e) => { e.stopPropagation(); if (!isDragging && !e.altKey) setSelectedEventId(evt.id); }} className={`class-block-wrapper cursor-pointer group ${isHighlighted ? 'selected-halo' : ''}`} style={{ width: `${DAY_WIDTH - 12}px`, height: `${height - 4}px`, transform: `translateX(${left + 6}px) translateY(${topOffset + top}px) translateZ(${translateZ}px)`, zIndex: isHighlighted ? 150 : evt.layerIndex + 1 }}>
@@ -1337,9 +1322,9 @@
                                                     {!isShort && (
                                                         <div className="w-full flex justify-between items-end mt-auto shrink-0 pt-0.5">
                                                             <div className="text-[10px] text-gray-800 font-mono opacity-80 bg-white/30 px-1 py-0.5 rounded">{minutesToTime(evt.start)}-{minutesToTime(evt.end)}</div>
-                                                            {evt.roomInfo && evt.roomInfo.name && (
-                                                                <span className="text-[10px] text-gray-700 bg-white/40 px-1 rounded shadow-sm ml-1 shrink-0 truncate max-w-[80px]" title={evt.roomInfo.detail}>
-                                                                    {evt.roomInfo.short}
+                                                            {roomLabel && (
+                                                                <span className="text-[10px] text-gray-700 bg-white/40 px-1 rounded shadow-sm ml-1 shrink-0 truncate max-w-[80px]" title={roomLabel}>
+                                                                    {roomLabel}
                                                                 </span>
                                                             )}
                                                         </div>
